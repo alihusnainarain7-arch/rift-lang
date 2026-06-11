@@ -1,0 +1,6 @@
+function add_nums with a b do
+return a + b
+end function
+
+add_nums 10 20 store total
+show total

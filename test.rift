@@ -1,0 +1,6 @@
+function greet with name do
+show name
+end function
+
+greet "Ali"
+greet "RIFT"

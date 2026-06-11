@@ -1,0 +1,17 @@
+function greet with name do
+"Hello " + name store msg
+show msg
+end function
+
+function add_nums with a b do
+a + b store result
+return result
+end function
+
+greet "Ali Husnain"
+greet "RIFT Language"
+add_nums 15 25 store total
+show total
+loop 3 times
+show "RIFT rocks!"
+end loop
