@@ -16,6 +16,9 @@ pub enum Expr {
     FunctionDef { name: String, params: Vec<String>, body: Vec<Expr> },
     FunctionCall { name: String, args: Vec<Expr> },
     Return(Box<Expr>),
+    ReadFile { path: Box<Expr>, store_in: String },
+    WriteFile { path: Box<Expr>, content: Box<Expr> },
+    AppendFile { path: Box<Expr>, content: Box<Expr> },
 }
 
 #[derive(Debug, Clone)]
@@ -91,12 +94,41 @@ impl Parser {
         match self.peek().clone() {
             Token::Show => {
                 self.next();
-                let val = self.parse_expr();
-                Expr::Show(Box::new(val))
+                Expr::Show(Box::new(self.parse_expr()))
             }
             Token::Return => {
                 self.next();
                 Expr::Return(Box::new(self.parse_expr()))
+            }
+            Token::Read => {
+                self.next();
+                let path = self.parse_atom();
+                self.next(); // store
+                if let Token::Ident(name) = self.next() {
+                    return Expr::ReadFile {
+                        path: Box::new(path),
+                        store_in: name,
+                    };
+                }
+                Expr::Number(0.0)
+            }
+            Token::Write => {
+                self.next();
+                let path = self.parse_atom();
+                let content = self.parse_expr();
+                Expr::WriteFile {
+                    path: Box::new(path),
+                    content: Box::new(content),
+                }
+            }
+            Token::Append => {
+                self.next();
+                let path = self.parse_atom();
+                let content = self.parse_expr();
+                Expr::AppendFile {
+                    path: Box::new(path),
+                    content: Box::new(content),
+                }
             }
             Token::Function => {
                 self.next();
@@ -117,7 +149,7 @@ impl Parser {
                     body.push(self.parse_stmt());
                     self.skip_newlines();
                 }
-                self.next(); // end
+                self.next();
                 if self.peek() == &Token::Function { self.next(); }
                 Expr::FunctionDef { name, params, body }
             }
@@ -126,7 +158,7 @@ impl Parser {
                 let prompt = if let Token::StringLit(s) = self.peek().clone() {
                     self.next(); s
                 } else { String::new() };
-                self.next(); // store
+                self.next();
                 if let Token::Ident(name) = self.next() {
                     return Expr::Input { prompt, store_in: name };
                 }
@@ -142,7 +174,7 @@ impl Parser {
                     body.push(self.parse_stmt());
                     self.skip_newlines();
                 }
-                self.next(); // end
+                self.next();
                 if self.peek() == &Token::Loop { self.next(); }
                 Expr::Loop { count: Box::new(count), body }
             }
@@ -191,7 +223,6 @@ impl Parser {
                 }
                 if matches!(val, Expr::Ident(_)) {
                     let mut args = Vec::new();
-                    // args sirf same line pe — Newline aaye to stop
                     while !matches!(self.peek(),
                         Token::Newline | Token::EOF | Token::Store |
                         Token::Then | Token::Do | Token::End |
@@ -219,7 +250,7 @@ impl Parser {
             Token::Add => {
                 self.next();
                 let value = self.parse_expr();
-                self.next(); // to
+                self.next();
                 if let Token::Ident(list) = self.next() {
                     return Expr::Add { value: Box::new(value), list };
                 }
@@ -228,7 +259,7 @@ impl Parser {
             Token::Remove => {
                 self.next();
                 let value = self.parse_expr();
-                self.next(); // from
+                self.next();
                 if let Token::Ident(list) = self.next() {
                     return Expr::Remove { value: Box::new(value), list };
                 }
@@ -253,7 +284,7 @@ impl Parser {
                         self.skip_newlines();
                     }
                 }
-                self.next(); // end
+                self.next();
                 if self.peek() == &Token::If { self.next(); }
                 Expr::If { condition: Box::new(cond), body, else_body }
             }

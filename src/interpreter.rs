@@ -1,6 +1,7 @@
 use crate::parser::{Expr, Op};
 use std::collections::HashMap;
 use std::io::{self, Write};
+use std::fs;
 
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -16,14 +17,10 @@ struct Function {
     body: Vec<Expr>,
 }
 
-enum RunResult {
-    Value(Value),
-    Return(Value),
-}
-
 pub struct Interpreter {
     pub vars: HashMap<String, Value>,
     functions: HashMap<String, Function>,
+    call_stack: Vec<String>,
 }
 
 impl Interpreter {
@@ -31,6 +28,7 @@ impl Interpreter {
         Interpreter {
             vars: HashMap::new(),
             functions: HashMap::new(),
+            call_stack: Vec::new(),
         }
     }
 
@@ -43,13 +41,34 @@ impl Interpreter {
     fn run_body(&mut self, exprs: Vec<Expr>) -> Value {
         for expr in exprs {
             match expr {
-                Expr::Return(inner) => {
-                    return self.eval(*inner);
-                }
+                Expr::Return(inner) => return self.eval(*inner),
                 other => { self.eval(other); }
             }
         }
         Value::Null
+    }
+
+    fn error(&self, msg: &str) {
+        if self.call_stack.is_empty() {
+            eprintln!("RIFT Error: {}", msg);
+        } else {
+            eprintln!("RIFT Error in '{}': {}", self.call_stack.last().unwrap(), msg);
+        }
+    }
+
+    fn val_to_string(&self, v: &Value) -> String {
+        match v {
+            Value::Number(n) => {
+                if *n == n.floor() { format!("{}", *n as i64) }
+                else { format!("{}", n) }
+            }
+            Value::Text(s) => s.clone(),
+            Value::List(items) => {
+                let parts: Vec<String> = items.iter().map(|i| self.val_to_string(i)).collect();
+                parts.join(", ")
+            }
+            Value::Null => String::from("null"),
+        }
     }
 
     fn eval(&mut self, expr: Expr) -> Value {
@@ -57,27 +76,64 @@ impl Interpreter {
             Expr::Number(n) => Value::Number(n),
             Expr::StringLit(s) => Value::Text(s),
             Expr::Ident(name) => {
-                self.vars.get(&name).cloned().unwrap_or(Value::Null)
+                match self.vars.get(&name).cloned() {
+                    Some(v) => v,
+                    None => {
+                        self.error(&format!("'{}' variable nahi mila!", name));
+                        Value::Null
+                    }
+                }
             }
             Expr::Show(inner) => {
                 let val = self.eval(*inner);
-                match &val {
-                    Value::Number(n) => {
-                        if *n == n.floor() { println!("{}", *n as i64); }
-                        else { println!("{}", n); }
-                    }
-                    Value::Text(s) => println!("{}", s),
-                    Value::List(items) => {
-                        let parts: Vec<String> = items.iter().map(|i| match i {
-                            Value::Number(n) => n.to_string(),
-                            Value::Text(s) => s.clone(),
-                            _ => String::new(),
-                        }).collect();
-                        println!("{}", parts.join(", "));
-                    }
-                    Value::Null => println!("null"),
-                }
+                println!("{}", self.val_to_string(&val));
                 val
+            }
+            Expr::ReadFile { path, store_in } => {
+                let p = self.eval(*path);
+                let path_str = self.val_to_string(&p);
+                match fs::read_to_string(&path_str) {
+                    Ok(content) => {
+                        let val = Value::Text(content.trim().to_string());
+                        self.vars.insert(store_in, val.clone());
+                        val
+                    }
+                    Err(_) => {
+                        self.error(&format!("'{}' file nahi parh saka!", path_str));
+                        Value::Null
+                    }
+                }
+            }
+            Expr::WriteFile { path, content } => {
+                let p = self.eval(*path);
+                let c = self.eval(*content);
+                let path_str = self.val_to_string(&p);
+                let content_str = self.val_to_string(&c);
+                match fs::write(&path_str, &content_str) {
+                    Ok(_) => {
+                        println!("'{}' mein likha gaya!", path_str);
+                        Value::Text(content_str)
+                    }
+                    Err(_) => {
+                        self.error(&format!("'{}' mein nahi likh saka!", path_str));
+                        Value::Null
+                    }
+                }
+            }
+            Expr::AppendFile { path, content } => {
+                let p = self.eval(*path);
+                let c = self.eval(*content);
+                let path_str = self.val_to_string(&p);
+                let content_str = self.val_to_string(&c);
+                let existing = fs::read_to_string(&path_str).unwrap_or_default();
+                let new_content = existing + &content_str + "\n";
+                match fs::write(&path_str, &new_content) {
+                    Ok(_) => Value::Text(content_str),
+                    Err(_) => {
+                        self.error(&format!("'{}' mein append nahi ho saka!", path_str));
+                        Value::Null
+                    }
+                }
             }
             Expr::FunctionDef { name, params, body } => {
                 self.functions.insert(name, Function { params, body });
@@ -86,18 +142,27 @@ impl Interpreter {
             Expr::FunctionCall { name, args } => {
                 let func = self.functions.get(&name).cloned();
                 if let Some(func) = func {
+                    if args.len() != func.params.len() {
+                        self.error(&format!(
+                            "'{}' ko {} arguments chahiye, {} diye!",
+                            name, func.params.len(), args.len()
+                        ));
+                        return Value::Null;
+                    }
                     let old_vars = self.vars.clone();
                     let old_funcs = self.functions.clone();
+                    self.call_stack.push(name.clone());
                     for (param, arg) in func.params.iter().zip(args.iter()) {
                         let val = self.eval(arg.clone());
                         self.vars.insert(param.clone(), val);
                     }
                     let result = self.run_body(func.body);
+                    self.call_stack.pop();
                     self.vars = old_vars;
                     self.functions = old_funcs;
                     result
                 } else {
-                    println!("Error: '{}' function nahi mili!", name);
+                    self.error(&format!("'{}' function nahi mila!", name));
                     Value::Null
                 }
             }
@@ -160,7 +225,10 @@ impl Interpreter {
                         Op::Plus     => Value::Number(a + b),
                         Op::Minus    => Value::Number(a - b),
                         Op::Multiply => Value::Number(a * b),
-                        Op::Divide   => Value::Number(a / b),
+                        Op::Divide   => {
+                            if b == 0.0 { self.error("Zero se divide nahi!"); Value::Null }
+                            else { Value::Number(a / b) }
+                        }
                         Op::Equals   => Value::Number(if a == b { 1.0 } else { 0.0 }),
                         Op::Greater  => Value::Number(if a > b  { 1.0 } else { 0.0 }),
                         Op::Less     => Value::Number(if a < b  { 1.0 } else { 0.0 }),

@@ -3,6 +3,7 @@ pub enum Token {
     Show, Store, Add, To, From, Remove,
     If, Else, Then, End, Input, Loop, Times,
     Function, With, Do, Return,
+    Read, Write, Append,
     Plus, Minus, Multiply, Divide,
     Equals, Greater, Less,
     Newline,
@@ -18,10 +19,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
 
     while let Some(&ch) = chars.peek() {
         match ch {
-            '\n' => {
-                tokens.push(Token::Newline);
-                chars.next();
-            }
+            '\n' => { tokens.push(Token::Newline); chars.next(); }
             ' ' | '\t' | '\r' => { chars.next(); }
             '+' => { tokens.push(Token::Plus); chars.next(); }
             '-' => { tokens.push(Token::Minus); chars.next(); }
@@ -73,6 +71,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     "with"     => Token::With,
                     "do"       => Token::Do,
                     "return"   => Token::Return,
+                    "read"     => Token::Read,
+                    "write"    => Token::Write,
+                    "append"   => Token::Append,
                     _          => Token::Ident(word),
                 };
                 tokens.push(tok);

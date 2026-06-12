@@ -1,6 +1,6 @@
-function greet with name do
-show name
-end function
-
-greet "Ali"
-greet "RIFT"
+write "data.txt" "Ali Husnain ne RIFT banaya!"
+read "data.txt" store content
+show content
+append "data.txt" "RIFT sabse best language hai!"
+read "data.txt" store content2
+show content2
